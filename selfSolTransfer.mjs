@@ -25,7 +25,7 @@ const USER_KEYPAIR = Keypair.fromSecretKey(
 
 const CU_BUDGET = 500;
 const PRIORITY_FEE_LAMPORTS = 1;
-const MAX_TX_RETRIES = 3;
+const TX_RETRY_INTERVAL = 2000;
 
 const connection = new Connection(RPC_ENDPOINT);
 
@@ -80,13 +80,57 @@ async function main() {
   console.log(simulationResult);
 
   let txSignature = null;
-  let confirmedTransaction = null;
+  let confirmTransactionPromise = null;
+  let confirmedTx = null;
 
-  let attempts = 0;
-  while (attempts < MAX_TX_RETRIES) {
-    try {
-      console.log("Sending Transaction");
-      txSignature = await connection.sendRawTransaction(tx.serialize(), {
+  const signatureRaw = tx.signatures[0];
+  txSignature = bs58.encode(signatureRaw);
+
+  // In the following section, we wait and constantly check for the transaction to be confirmed
+  // and resend the transaction if it is not confirmed within a certain time interval
+  // thus handling tx retries on the client side rather than relying on the RPC
+
+  try {
+    // Send and wait confirmation (subscribe on confirmation before sending)
+    console.log("Subscribing to transaction confirmation");
+
+    // confirmTransaction throws error, handle it
+    confirmTransactionPromise = connection.confirmTransaction(
+      {
+        signature: txSignature,
+        blockhash: blockhashResult.blockhash,
+        lastValidBlockHeight: blockhashResult.lastValidBlockHeight,
+      },
+      "confirmed"
+    );
+
+    console.log("Sending Transaction");
+    await connection.sendRawTransaction(tx.serialize(), {
+      // Skipping preflight i.e. tx simulation by RPC as we simulated the tx above
+      // This allows Triton RPCs to send the transaction through multiple pathways for the fastest delivery
+      skipPreflight: true,
+      // Setting max retries to 0 as we are handling retries manually
+      // Set this manually so that the default is skipped
+      maxRetries: 0,
+    });
+
+    confirmedTx = null;
+    while (!confirmedTx) {
+      confirmedTx = await Promise.race([
+        confirmTransactionPromise,
+        new Promise((resolve) =>
+          setTimeout(() => {
+            resolve(null);
+          }, TX_RETRY_INTERVAL)
+        ),
+      ]);
+      if (confirmedTx) {
+        break;
+      }
+
+      console.log("Tx not confirmed, resending");
+
+      await connection.sendRawTransaction(tx.serialize(), {
         // Skipping preflight i.e. tx simulation by RPC as we simulated the tx above
         // This allows Triton RPCs to send the transaction through multiple pathways for the fastest delivery
         skipPreflight: true,
@@ -94,40 +138,12 @@ async function main() {
         // Set this manually so that the default is skipped
         maxRetries: 0,
       });
-
-      console.log("Confirming Transaction");
-      confirmedTransaction = await connection
-        .confirmTransaction(
-          {
-            signature: txSignature,
-            blockhash: blockhashResult.blockhash,
-            lastValidBlockHeight: blockhashResult.lastValidBlockHeight,
-          },
-          "confirmed"
-        )
-        .catch((e) => {
-          throw new Error(
-            `Failed to confirm transaction ${txSignature} with error ${e}`
-          );
-        });
-
-      break;
-    } catch (e) {
-      console.log(e);
-
-      blockhashResult = connection.getLatestBlockhash({
-        commitment: "confirmed",
-      });
-
-      // Setting the blockhash again as the previous one might have expired
-      tx.lastValidBlockHeight = blockhashResult.lastValidBlockHeight;
-      tx.recentBlockhash = blockhashResult.blockhash;
-
-      console.log(`Retrying transaction, attempt: ${++attempts}`);
     }
+  } catch (error) {
+    console.error(error);
   }
 
-  if (!confirmedTransaction) {
+  if (!confirmedTx) {
     console.log("Transaction failed");
     return;
   }
