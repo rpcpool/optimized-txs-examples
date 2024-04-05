@@ -76,7 +76,7 @@ async function main() {
     );
   }
 
-  console.log("Transaction simulation successful result:");
+  console.log(`${new Date().toISOString()} Transaction simulation successful result:`);
   console.log(simulationResult);
 
   let txSignature = null;
@@ -86,13 +86,15 @@ async function main() {
   const signatureRaw = tx.signatures[0];
   txSignature = bs58.encode(signatureRaw);
 
+  let txSendAttempts = 1;
+
   // In the following section, we wait and constantly check for the transaction to be confirmed
   // and resend the transaction if it is not confirmed within a certain time interval
   // thus handling tx retries on the client side rather than relying on the RPC
 
   try {
     // Send and wait confirmation (subscribe on confirmation before sending)
-    console.log("Subscribing to transaction confirmation");
+    console.log(`${new Date().toISOString()} Subscribing to transaction confirmation`);
 
     // confirmTransaction throws error, handle it
     confirmTransactionPromise = connection.confirmTransaction(
@@ -104,7 +106,7 @@ async function main() {
       "confirmed"
     );
 
-    console.log("Sending Transaction");
+    console.log(`${new Date().toISOString()} Sending Transaction ${txSignature}`);
     await connection.sendRawTransaction(tx.serialize(), {
       // Skipping preflight i.e. tx simulation by RPC as we simulated the tx above
       // This allows Triton RPCs to send the transaction through multiple pathways for the fastest delivery
@@ -128,7 +130,7 @@ async function main() {
         break;
       }
 
-      console.log("Tx not confirmed, resending");
+      console.log(`${new Date().toISOString()} Tx not confirmed after ${TX_RETRY_INTERVAL * txSendAttempts++}ms, resending`);
 
       await connection.sendRawTransaction(tx.serialize(), {
         // Skipping preflight i.e. tx simulation by RPC as we simulated the tx above
@@ -144,12 +146,12 @@ async function main() {
   }
 
   if (!confirmedTx) {
-    console.log("Transaction failed");
+    console.log(`${new Date().toISOString()} Transaction failed`);
     return;
   }
 
-  console.log("Transaction successful, explorer URL:");
-  console.log(`https://explorer.solana.com/tx/${txSignature}`);
+  console.log(`${new Date().toISOString()} Transaction successful`);
+  console.log(`${new Date().toISOString()} Explorer URL: https://explorer.solana.com/tx/${txSignature}`);
 }
 
 main();
