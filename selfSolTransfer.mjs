@@ -27,9 +27,7 @@ const CU_BUDGET = 500;
 const PRIORITY_FEE_LAMPORTS = 1;
 const MAX_TX_RETRIES = 3;
 
-const connection = new Connection(RPC_ENDPOINT, {
-  confirmTransactionInitialTimeout: 10,
-});
+const connection = new Connection(RPC_ENDPOINT);
 
 async function main() {
   let blockhashResult = await connection.getLatestBlockhash({
@@ -92,6 +90,9 @@ async function main() {
         // Skipping preflight i.e. tx simulation by RPC as we simulated the tx above
         // This allows Triton RPCs to send the transaction through multiple pathways for the fastest delivery
         skipPreflight: true,
+        // Setting max retries to 0 as we are handling retries manually
+        // Set this manually so that the default is skipped
+        maxRetries: 0,
       });
 
       console.log("Confirming Transaction");
@@ -118,6 +119,7 @@ async function main() {
         commitment: "confirmed",
       });
 
+      // Setting the blockhash again as the previous one might have expired
       tx.lastValidBlockHeight = blockhashResult.lastValidBlockHeight;
       tx.recentBlockhash = blockhashResult.blockhash;
 
