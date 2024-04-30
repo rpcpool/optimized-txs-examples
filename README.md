@@ -14,3 +14,4 @@ Run a script by executing `node <script-name>.mjs`. For eg `node selfSolTransfer
 Refer the environment variables needed in the `.env.sample` file  
 
 1. `selfSolTransfer.mjs`: Transfer 5000 lamports to yourself
+2. `jupiterSwap.mjs`: Swap using the Jupiter API
